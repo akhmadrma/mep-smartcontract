@@ -3,7 +3,6 @@ pragma solidity ^0.8.13;
 
 //xxx expecting huge gasfee, need more optimilization
 //todo : look for reentrancy case, check all logic func
-// todo : testing conf
 
 
 
@@ -12,13 +11,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 using SafeERC20 for IERC20;
 
 contract ProjectEscrow {
-    error OnlyClient();
-    error OnlyWorker();
-    error InvalidState();
-    error InvalidAmount();
-    error ZeroAddress();
-    error TransferFailed();
-    error AlreadyExists();
+    error OnlyClient(string message);
+    error OnlyWorker(string message);
+    error InvalidState(string message);
+    error InvalidAmount(string message);
+    error ZeroAddress(string message);
+    error TransferFailed(string message);
+    error AlreadyExists(string message);
 
     enum Status {
         PENDING, // Project: pending || Milestone: pending
@@ -61,11 +60,11 @@ contract ProjectEscrow {
     mapping(uint256 => uint256) public projectBalances;
 
     modifier onlyClient(uint256 projectId) {
-        if (msg.sender != projects[projectId].client) revert OnlyClient();
+        if (msg.sender != projects[projectId].client) revert OnlyClient("only client can call this function");
         _;
     }
     modifier onlyWorker(uint256 projectId) {
-        if (msg.sender != projects[projectId].worker) revert OnlyWorker();
+        if (msg.sender != projects[projectId].worker) revert OnlyWorker("only worker can call this function");
         _;
     }
 
@@ -118,8 +117,8 @@ contract ProjectEscrow {
         address _client,
         address _token
     ) public {
-        if (projects[_projectId].timestamp != 0) revert AlreadyExists();
-        if (_client == address(0)) revert ZeroAddress();
+        if (projects[_projectId].timestamp != 0) revert AlreadyExists("project already exists");
+        if (_client == address(0)) revert ZeroAddress("zero address");
 
         projects[_projectId] = Project({
             worker: msg.sender, // worker is the one who create the project
@@ -146,9 +145,9 @@ contract ProjectEscrow {
         uint256 _milestoneId,
         uint256 _amount
     ) external onlyWorker(_projectId) {
-        if (_amount == 0) revert InvalidAmount();
-        if (projectMilestones[_projectId][_milestoneId].timestamp != 0) revert AlreadyExists();
-        if (projects[_projectId].status != Status.PENDING) revert InvalidState();
+        if (_amount == 0) revert InvalidAmount("amount is 0");
+        if (projectMilestones[_projectId][_milestoneId].timestamp != 0) revert AlreadyExists("milestone already exists");
+        if (projects[_projectId].status != Status.PENDING) revert InvalidState("project is not pending");
         projectMilestones[_projectId][_milestoneId] = Milestone({
             amount: _amount,
             payoutAmount: 0,
@@ -170,8 +169,8 @@ contract ProjectEscrow {
         uint256 projectId,
         uint256 amount
     ) external onlyClient(projectId) {
-        if (amount == 0) revert InvalidAmount();
-        if (projects[projectId].status != Status.PENDING) revert InvalidState();
+        if (amount == 0) revert InvalidAmount("amount is 0");
+        if (projects[projectId].status != Status.PENDING) revert InvalidState("project is not pending");
 
         IERC20 token = IERC20(projects[projectId].token);
         token.transferFrom(msg.sender, address(this), amount);
@@ -188,7 +187,7 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyWorker(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.status != Status.PENDING && m.status != Status.REJECTED || projects[projectId].status != Status.ONPROGRESS) revert InvalidState();
+        if (m.status != Status.PENDING && m.status != Status.REJECTED || projects[projectId].status != Status.ONPROGRESS) revert InvalidState("milestone is not pending or rejected or project is not onprogress");
         m.status = Status.ONPROGRESS;
         emit MilestoneStarted(projectId, milestoneId);
     }
@@ -198,10 +197,11 @@ contract ProjectEscrow {
         uint256 projectId,
         uint256 amount
     ) external onlyClient(projectId) {
-        if (amount == 0) revert InvalidAmount();
+        if (amount == 0) revert InvalidAmount("amount is 0");
+        if (amount > projects[projectId].totalAmount) revert InvalidAmount("amount is more than project total amount");
 
         IERC20 token = IERC20(projects[projectId].token);
-        token.safeTransferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, address(this), amount);
 
         projects[projectId].fundsDeposited += amount;
         projectBalances[projectId] += amount;
@@ -215,9 +215,9 @@ contract ProjectEscrow {
         uint256 amount
     ) external onlyWorker(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.status != Status.ONPROGRESS) revert InvalidState();
-        if (m.payoutRequested) revert InvalidState();
-        if (amount == 0 || amount > m.amount) revert InvalidAmount();
+        if (m.status != Status.ONPROGRESS) revert InvalidState("milestone is not onprogress");
+        if (m.payoutRequested) revert InvalidState("payout already requested");
+        if (amount == 0 || amount > m.amount) revert InvalidAmount("amount is 0 or more than milestone amount");
         m.payoutRequested = true;
         m.payoutAmount = amount;
 
@@ -230,7 +230,7 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyClient(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.payoutApproved || !m.payoutRequested) revert InvalidState();
+        if (m.payoutApproved || !m.payoutRequested) revert InvalidState("payout is approved or not requested");
         m.payoutApproved = true;
         emit PayoutApproved(projectId, milestoneId);
     }
@@ -241,7 +241,7 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyClient(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.payoutApproved || !m.payoutRequested) revert InvalidState();
+        if (m.payoutApproved || !m.payoutRequested) revert InvalidState("payout is approved or not requested");
         m.payoutApproved = false;
         m.payoutRequested = false;
         m.payoutAmount = 0;
@@ -254,14 +254,14 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyWorker(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.amount == 0) revert InvalidState();
-        if (m.status != Status.ONPROGRESS) revert InvalidState();
-        if (!m.payoutApproved) revert InvalidState();
-        if (!m.payoutRequested) revert InvalidState();
+        if (m.amount == 0) revert InvalidState("milestone amount is 0");
+        if (m.status != Status.ONPROGRESS) revert InvalidState("milestone is not onprogress");
+        if (!m.payoutApproved) revert InvalidState("payout is not approved");
+        if (!m.payoutRequested) revert InvalidState("payout is not requested");
 
         uint256 amountToWithdraw = m.payoutAmount;
         if (projectBalances[projectId] < amountToWithdraw)
-            revert InvalidState();
+            revert InvalidState("project balance is less than amount to withdraw"  );
 
         // Effects
         projectBalances[projectId] -= amountToWithdraw;
@@ -283,7 +283,7 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyWorker(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.status != Status.ONPROGRESS) revert InvalidState();
+        if (m.status != Status.ONPROGRESS) revert InvalidState("milestone is not onprogress");
         m.status = Status.PENDING;
         m.milestoneApproveRequest = true;
 
@@ -296,8 +296,8 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyClient(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.status != Status.PENDING) revert InvalidState();
-        if (!m.milestoneApproveRequest) revert InvalidState();
+        if (m.status != Status.PENDING) revert InvalidState("milestone is not pending");
+        if (!m.milestoneApproveRequest) revert InvalidState("milestone approve request is not true");
         m.status = Status.APPROVED;
         m.milestoneApproved = true;
         emit MilestoneApproved(projectId, milestoneId);
@@ -320,11 +320,11 @@ contract ProjectEscrow {
         Milestone storage m = projectMilestones[projectId][milestoneId];
         // butuh status approved DAN flag true
         if (m.status != Status.APPROVED || !m.milestoneApproved)
-            revert InvalidState();
+            revert InvalidState("milestone is not approved or milestone approve is not true");
 
         uint256 amountToWithdraw = m.amount;
         if (projectBalances[projectId] < amountToWithdraw)
-            revert InvalidState();
+            revert InvalidState("project balance is less than amount to withdraw");
 
         projectBalances[projectId] -= amountToWithdraw;
         projects[projectId].released += amountToWithdraw;
@@ -344,10 +344,10 @@ contract ProjectEscrow {
     // Fungsi untuk mengembalikan dana ke client jika milestone tidak tercapai dalam waktu yang ditentukan
     function issueRefund(uint256 projectId) external onlyClient(projectId) {
         Project storage p = projects[projectId];
-        if (p.status == Status.COMPLETED) revert InvalidState();
+        if (p.status == Status.COMPLETED) revert InvalidState("project is completed");
 
         uint256 refundable = projectBalances[projectId]; // sementara: jika lanjut, hitung dari fundsDeposited - released
-        if (refundable == 0) revert InvalidAmount();
+        if (refundable == 0) revert InvalidAmount("refundable is 0");
 
         projectBalances[projectId] = 0;
         p.fundsDeposited = p.released; // sisakan angka sesuai dana yg sudah keluar
@@ -360,8 +360,8 @@ contract ProjectEscrow {
 
     // Fungsi untuk menyelesaikan proyek dan mengonfirmasi bahwa semua dana telah diproses
     function completeProject(uint256 projectId) external onlyWorker(projectId) {
-        if (projects[projectId].status != Status.ONPROGRESS) revert InvalidState();
-        if (projectBalances[projectId] > 0) revert InvalidState();
+        if (projects[projectId].status != Status.ONPROGRESS) revert InvalidState("project is not onprogress");
+        if (projectBalances[projectId] > 0) revert InvalidState("project balance is more than 0");
 
         projects[projectId].status = Status.COMPLETED;
     }
