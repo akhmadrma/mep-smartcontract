@@ -18,6 +18,7 @@ contract ProjectEscrow {
     error InvalidAmount();
     error ZeroAddress();
     error TransferFailed();
+    error AlreadyExists();
 
     enum Status {
         PENDING, // Project: pending || Milestone: pending
@@ -29,6 +30,7 @@ contract ProjectEscrow {
     }
     // Milestone structure
     struct Milestone {
+
         uint256 amount;
         uint256 payoutAmount;
         bool payoutApproved;
@@ -48,6 +50,7 @@ contract ProjectEscrow {
         uint256 fundsDeposited;
         uint256 released; // total yang sudah dibayarkan keluar
         Status status;
+        uint256 timestamp;
     }
 
     // Mapping for projectId
@@ -72,7 +75,7 @@ contract ProjectEscrow {
         address client,
         address worker,
         address token,
-        uint256 totalAmount
+        Status status
     );
     event MilestoneCreated(
         uint256 projectId,
@@ -111,42 +114,43 @@ contract ProjectEscrow {
     event MilestonePaused(uint256 projectId, uint256 milestoneId);
     // Fungsi untuk membuat proyek baru
     function createProject(
-        uint256 projectId,
+        uint256 _projectId,
         address _client,
-        address _token,
-        uint256 _totalAmount
+        address _token
     ) public {
-        if (projects[projectId].client != address(0)) revert InvalidState();
+        if (projects[_projectId].timestamp != 0) revert AlreadyExists();
         if (_client == address(0)) revert ZeroAddress();
-        if (_totalAmount == 0) revert InvalidAmount();
 
-        projects[projectId] = Project({
+        projects[_projectId] = Project({
             worker: msg.sender, // worker is the one who create the project
             client: _client,
             token: _token,
-            totalAmount: _totalAmount,
+            totalAmount: 0,
             fundsDeposited: 0,
             released: 0,
-            status: Status.PENDING
+            status: Status.PENDING,
+            timestamp : block.timestamp
         });
         emit ProjectCreated(
-            projectId,
-            _client,
-            msg.sender,
-            _token,
-            _totalAmount
+            _projectId,
+            projects[_projectId].client,
+            projects[_projectId].worker,
+            projects[_projectId].token,
+            projects[_projectId].status
         );
     }
 
     // Fungsi untuk menetapkan milestone untuk proyek
-    function setMilestone(
-        uint256 projectId,
-        uint256 milestoneId,
-        uint256 amount
-    ) external onlyWorker(projectId) {
-        if (amount == 0) revert InvalidAmount();
-        projectMilestones[projectId][milestoneId] = Milestone({
-            amount: amount,
+    function createMilestone(
+        uint256 _projectId,
+        uint256 _milestoneId,
+        uint256 _amount
+    ) external onlyWorker(_projectId) {
+        if (_amount == 0) revert InvalidAmount();
+        if (projectMilestones[_projectId][_milestoneId].timestamp != 0) revert AlreadyExists();
+        if (projects[_projectId].status != Status.PENDING) revert InvalidState();
+        projectMilestones[_projectId][_milestoneId] = Milestone({
+            amount: _amount,
             payoutAmount: 0,
             payoutApproved: false,
             payoutRequested: false,
@@ -155,7 +159,9 @@ contract ProjectEscrow {
             status: Status.PENDING,
             timestamp: block.timestamp
         });
-        emit MilestoneCreated(projectId, milestoneId, amount);
+        
+        projects[_projectId].totalAmount += _amount;
+        emit MilestoneCreated(_projectId, _milestoneId, _amount);
     }
 
     // start project by depositing funds
@@ -165,9 +171,10 @@ contract ProjectEscrow {
         uint256 amount
     ) external onlyClient(projectId) {
         if (amount == 0) revert InvalidAmount();
+        if (projects[projectId].status != Status.PENDING) revert InvalidState();
 
         IERC20 token = IERC20(projects[projectId].token);
-        token.safeTransferFrom(msg.sender, address(this), amount);
+        token.transferFrom(msg.sender, address(this), amount);
 
         projects[projectId].status = Status.ONPROGRESS;
         projects[projectId].fundsDeposited += amount;
@@ -181,7 +188,7 @@ contract ProjectEscrow {
         uint256 milestoneId
     ) external onlyWorker(projectId) {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.status != Status.PENDING || m.status != Status.REJECTED) revert InvalidState();
+        if (m.status != Status.PENDING && m.status != Status.REJECTED || projects[projectId].status != Status.ONPROGRESS) revert InvalidState();
         m.status = Status.ONPROGRESS;
         emit MilestoneStarted(projectId, milestoneId);
     }
@@ -357,6 +364,14 @@ contract ProjectEscrow {
         if (projectBalances[projectId] > 0) revert InvalidState();
 
         projects[projectId].status = Status.COMPLETED;
+    }
+
+    function getProjectDetails(uint256 projectId) public view returns (Project memory) {
+        return projects[projectId];
+    }
+
+    function getMilestoneDetails(uint256 projectId, uint256 milestoneId) public view returns (Milestone memory) {
+        return projectMilestones[projectId][milestoneId];
     }
 
     // Fungsi untuk mengambil status proyek
