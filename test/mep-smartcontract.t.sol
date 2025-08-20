@@ -309,8 +309,6 @@ contract ProjectEscrowFullFlowTest is Test {
         defaultToken.approve(address(escrow), amount);
         escrow.requestPayout(projectId, milestoneId, amount);
         vm.stopPrank();
-
-        consoleHelperProject(projectId, milestoneId, milestoneId);
     }
 
     // request payout failed
@@ -345,6 +343,27 @@ contract ProjectEscrowFullFlowTest is Test {
         );
         escrow.requestPayout(projectId, milestoneId, 0);
         vm.stopPrank();
+    }
+
+    //response payout success
+    function testResponsePayoutSuccess() public {
+        
+        testRequestPayoutSuccess();
+        vm.startPrank(defaultClient);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.PayoutResponse(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED, 100);
+        escrow.responsePayout(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED);
+        vm.stopPrank();
+
+        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
+    }
+
+    //response payout failed
+    function testResponsePayoutFailed() public {
+        testRequestPayoutSuccess();
+        vm.startPrank(defaultClient);
+        revertHelper(ProjectEscrow.InvalidState.selector, "payout is not pending");
+        escrow.responsePayout(defaultProjectId, defaultMilestone2, ProjectEscrow.ResponseStatus.APPROVED);
     }
 
     function revertHelper(bytes4 selector, string memory message) public {
