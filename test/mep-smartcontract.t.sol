@@ -94,8 +94,7 @@ contract ProjectEscrowFullFlowTest is Test {
             projectId,
             client,
             defaultWorker,
-            token,
-            ProjectEscrow.Status.PENDING
+            token
         );
         escrow.createProject(projectId, client, token);
 
@@ -265,7 +264,7 @@ contract ProjectEscrowFullFlowTest is Test {
         escrow.depositFunds(projectId, 100);
         vm.stopPrank();
 
-        // consoleHelperProject(projectId, defaultMilestone1, defaultMilestone2);
+        consoleHelperProject(projectId, defaultMilestone1, defaultMilestone2);
     }
 
     //deposit funds failed
@@ -277,7 +276,10 @@ contract ProjectEscrowFullFlowTest is Test {
         testStartMilestoneSuccess();
         vm.startPrank(defaultWorker);
         defaultToken.approve(address(escrow), 100);
-        revertHelper(ProjectEscrow.OnlyClient.selector, "only client can call this function");
+        revertHelper(
+            ProjectEscrow.OnlyClient.selector,
+            "only client can call this function"
+        );
         escrow.depositFunds(projectId, 100);
         vm.stopPrank();
 
@@ -296,90 +298,56 @@ contract ProjectEscrowFullFlowTest is Test {
         // vm.stopPrank();
     }
 
-    //request payout success
+    // request payout success
     function testRequestPayoutSuccess() public {
-
+        uint projectId = defaultProjectId;
+        uint milestoneId = defaultMilestone1;
+        uint amount = 100;
         //create project, create milesotne, start project, start milestone, deposit funds
-        testDepositeFundsSuccess();
+        testStartMilestoneSuccess();
         vm.startPrank(defaultWorker);
-        vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.PayoutRequested(defaultProjectId, defaultMilestone1, 100);
-        escrow.requestPayout(defaultProjectId, defaultMilestone1, 100);
+        defaultToken.approve(address(escrow), amount);
+        escrow.requestPayout(projectId, milestoneId, amount);
         vm.stopPrank();
 
-
-
-        // consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
+        consoleHelperProject(projectId, milestoneId, milestoneId);
     }
 
-    //request payout failed
+    // request payout failed
     function testRequestPayoutFailed() public {
+        uint projectId = defaultProjectId;
+        uint milestoneId = defaultMilestone1;
+        uint amount = 100;
+
+        testDepositeFundsSuccess();
+        vm.startPrank(defaultClient);
+        revertHelper(
+            ProjectEscrow.OnlyWorker.selector,
+            "only worker can call this function"
+        );
+        escrow.requestPayout(projectId, milestoneId, amount);
+        vm.stopPrank();
 
         //-------milestone not onprogress-------
-        //create project, create milesotne, start project, start milestone, deposit funds
-        testDepositeFundsSuccess();
         vm.startPrank(defaultWorker);
-        vm.expectRevert(ProjectEscrow.InvalidState.selector);
-        escrow.requestPayout(defaultProjectId, defaultMilestone2, 100);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "milestone is not onprogress"
+        );
+        escrow.requestPayout(projectId, defaultMilestone2, amount);
         vm.stopPrank();
 
-        // //-------milestone already requested payout-------
-        // //create project, create milesotne, start project, start milestone, deposit funds
-        // vm.startPrank(defaultWorker);
-        // escrow.requestPayout(defaultProjectId, defaultMilestone1, 100);
-        // vm.expectRevert(ProjectEscrow.InvalidState.selector);
-        // escrow.requestPayout(defaultProjectId, defaultMilestone1, 100);
-        // vm.stopPrank();
-
-        //-------amount 0 & amount more than milestone amount-------
-        //create project, create milesotne, start project, start milestone, deposit funds
+        //-------amount 0 or more than milestone amount-------
         vm.startPrank(defaultWorker);
-        vm.expectRevert(ProjectEscrow.InvalidAmount.selector);
-        escrow.requestPayout(defaultProjectId, defaultMilestone1, 0);
-        vm.expectRevert(ProjectEscrow.InvalidAmount.selector);
-        escrow.requestPayout(defaultProjectId, defaultMilestone1, 1000);
+        revertHelper(
+            ProjectEscrow.InvalidAmount.selector,
+            "amount is 0 or more than milestone amount"
+        );
+        escrow.requestPayout(projectId, milestoneId, 0);
         vm.stopPrank();
     }
 
-    //approve payout success
-    function testApprovePayoutSuccess() public {
-        //create project, create milesotne, start project, start milestone, deposit funds
-        testRequestPayoutSuccess();
-        vm.startPrank(defaultClient);
-        vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.PayoutApproved(defaultProjectId, defaultMilestone1);
-        escrow.approvePayout(defaultProjectId, defaultMilestone1);
-        vm.stopPrank();
-
-
-        // consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
-    }
-
-    //approve payout failed
-    function testApprovePayoutFailed() public {
-
-        // //-------only client-------
-        // //create project, create milesotne, start project, start milestone, deposit funds
-        // testRequestPayoutSuccess();
-        // vm.startPrank(defaultWorker);
-        // revertHelper(ProjectEscrow.OnlyClient.selector, "only client can call this function");
-        // escrow.approvePayout(defaultProjectId, defaultMilestone1);
-        // vm.stopPrank();
-
-        //-------payout is approved or not requested-------
-        //create project, create milesotne, start project, start milestone, deposit funds
-        // testRequestPayoutSuccess();
-        testApprovePayoutSuccess(); // make payout approved
-        vm.startPrank(defaultClient);
-        revertHelper(ProjectEscrow.InvalidState.selector, "payout is approved or not requested");
-        escrow.approvePayout(defaultProjectId, defaultMilestone1);
-        vm.stopPrank();
-
-    }
-
-
-
-
+ 
 
 
 
@@ -416,41 +384,42 @@ contract ProjectEscrowFullFlowTest is Test {
             milestone2
         );
 
-        console.log("defaultToken.balanceOf(defaultClient) : %s", defaultToken.balanceOf(defaultClient));
-        console.log("defaultToken.balanceOf(address(escrow)) : %s", defaultToken.balanceOf(address(escrow)));
-        console.log("defaultToken.balanceOf(defaultWorker) : %s", defaultToken.balanceOf(defaultWorker));
+        console.log(
+            "defaultToken.balanceOf(defaultClient) : %s",
+            defaultToken.balanceOf(defaultClient)
+        );
+        console.log(
+            "defaultToken.balanceOf(address(escrow)) : %s",
+            defaultToken.balanceOf(address(escrow))
+        );
+        console.log(
+            "defaultToken.balanceOf(defaultWorker) : %s",
+            defaultToken.balanceOf(defaultWorker)
+        );
 
         console.log("----------projectId  : %s", projectId);
         console.log(" status  : %s", uint(p.status));
         console.log(" totalAmount  : %s", p.totalAmount);
         console.log(" fundsDeposited  : %s", p.fundsDeposited);
-        console.log(" released  : %s", p.released);
         console.log(" worker  : %s", p.worker);
         console.log(" client  : %s", p.client);
         console.log(" token  : %s", p.token);
+        for (uint i = 0; i < p.milestoneIds.length; i++) {
+            console.log(" milestoneIds[%s]  : %s", i, p.milestoneIds[i]);
+        }
         console.log("----------milestone1  : %s", milestone1);
         console.log(" status  : %s", uint(m1.status));
         console.log(" amount  : %s", m1.amount);
         console.log(" payoutAmount  : %s", m1.payoutAmount);
-        console.log(" payoutApproved  : %s", m1.payoutApproved);
-        console.log(" payoutRequested  : %s", m1.payoutRequested);
-        console.log(" milestoneApproved  : %s", m1.milestoneApproved);
-        console.log(
-            " milestoneApproveRequest  : %s",
-            m1.milestoneApproveRequest
-        );
+        console.log(" payoutResponse  : %s", uint(m1.payoutResponse));
+        console.log(" milestoneResponse  : %s", uint(m1.milestoneResponse));
         console.log(" timestamp  : %s", m1.timestamp);
         console.log("----------milestone2  : %s", milestone2);
         console.log(" status  : %s", uint(m2.status));
         console.log(" amount  : %s", m2.amount);
         console.log(" payoutAmount  : %s", m2.payoutAmount);
-        console.log(" payoutApproved  : %s", m2.payoutApproved);
-        console.log(" payoutRequested  : %s", m2.payoutRequested);
-        console.log(" milestoneApproved  : %s", m2.milestoneApproved);
-        console.log(
-            " milestoneApproveRequest  : %s",
-            m2.milestoneApproveRequest
-        );
+        console.log(" payoutResponse  : %s", uint(m2.payoutResponse));
+        console.log(" milestoneResponse  : %s", uint(m2.milestoneResponse));
         console.log(" timestamp  : %s", m2.timestamp);
     }
 }
