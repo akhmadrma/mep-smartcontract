@@ -347,27 +347,156 @@ contract ProjectEscrowFullFlowTest is Test {
 
     //response payout success
     function testResponsePayoutSuccess() public {
-        
         testRequestPayoutSuccess();
         vm.startPrank(defaultClient);
         vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.PayoutResponse(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED, 100);
-        escrow.responsePayout(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED);
+        emit ProjectEscrow.PayoutResponse(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.APPROVED,
+            100
+        );
+        escrow.responsePayout(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.APPROVED
+        );
         vm.stopPrank();
-
-        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
     }
 
     //response payout failed
     function testResponsePayoutFailed() public {
         testRequestPayoutSuccess();
         vm.startPrank(defaultClient);
-        revertHelper(ProjectEscrow.InvalidState.selector, "payout is not pending");
-        escrow.responsePayout(defaultProjectId, defaultMilestone2, ProjectEscrow.ResponseStatus.APPROVED);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "payout is not pending"
+        );
+        escrow.responsePayout(
+            defaultProjectId,
+            defaultMilestone2,
+            ProjectEscrow.ResponseStatus.APPROVED
+        );
     }
 
     function revertHelper(bytes4 selector, string memory message) public {
         vm.expectRevert(abi.encodeWithSelector(selector, message));
+    }
+
+    // receive payout success
+    function testReceivePayoutSuccess() public {
+        testResponsePayoutSuccess();
+        vm.startPrank(defaultWorker);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.PayoutWithdrawn(
+            defaultProjectId,
+            defaultMilestone1,
+            100
+        );
+        escrow.receivePayout(defaultProjectId, defaultMilestone1);
+        vm.stopPrank();
+
+        consoleHelperProject(
+            defaultProjectId,
+            defaultMilestone1,
+            defaultMilestone2
+        );
+    }
+
+    // receive payout failed
+    function testReceivePayoutFailed() public {
+        testRequestPayoutSuccess();
+        // payout is not approved
+        vm.startPrank(defaultWorker);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "payout is not approved"
+        );
+        escrow.receivePayout(defaultProjectId, defaultMilestone1);
+        vm.stopPrank();
+
+        vm.startPrank(defaultClient);
+        escrow.responsePayout(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.APPROVED
+        ); // approve payout
+        revertHelper(
+            ProjectEscrow.OnlyWorker.selector,
+            "only worker can call this function"
+        );
+        escrow.receivePayout(defaultProjectId, defaultMilestone1); // only worker can call this function
+        vm.stopPrank();
+    }
+
+    // request approval milestone success
+    function testRequestApprovalMilestoneSuccess() public {
+        testRequestPayoutSuccess();
+        vm.startPrank(defaultWorker);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.ApprovalMilestoneRequested(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.Status.ONPROGRESS
+        );
+        escrow.requestApprovalMilestone(defaultProjectId, defaultMilestone1);
+        vm.stopPrank();
+
+        consoleHelperProject(
+            defaultProjectId,
+            defaultMilestone1,
+            defaultMilestone2
+        );
+    }
+
+    //request approval milestone failed
+    function testRequestApprovalMilestoneFailed() public {
+        testStartMilestoneSuccess();
+        vm.startPrank(defaultWorker);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "milestone is not onprogress"
+        );
+        escrow.requestApprovalMilestone(defaultProjectId, defaultMilestone2);
+        escrow.requestApprovalMilestone(defaultProjectId, defaultMilestone1);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "milestone already requestded"
+        );
+        escrow.requestApprovalMilestone(defaultProjectId, defaultMilestone1);
+        vm.stopPrank();
+    }
+
+    // respose milestone approval success
+    function testResponseMilestoneApprovalSuccess() public {
+        testRequestApprovalMilestoneSuccess();
+        vm.startPrank(defaultClient);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.MilestoneApprovalResponse(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED, ProjectEscrow.Status.APPROVED);
+        escrow.responseMilestoneApproval(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED);
+        vm.stopPrank();
+
+        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
+    }
+
+    // respose milestone approval failed
+    function testResponseMilestoneApprovalFailed() public {
+        testRequestApprovalMilestoneSuccess();
+        vm.startPrank(defaultClient);
+        revertHelper(ProjectEscrow.InvalidState.selector, "milestone approval must be pending");
+        escrow.responseMilestoneApproval(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.REJECTED);
+    }
+
+    // withdraw milestone fund success
+    function testWithdrawMilestoneFundSuccess() public {
+        testRequestApprovalMilestoneSuccess();
+        vm.startPrank(defaultWorker);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.MilestoneFundWithdrawn(defaultProjectId, defaultMilestone1, 100);
+        escrow.withdrawMilestoneFund(defaultProjectId, defaultMilestone1);
+        vm.stopPrank();
+
+        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
     }
 
     //helper

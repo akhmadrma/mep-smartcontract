@@ -302,6 +302,8 @@ contract ProjectEscrow {
         if (m.milestoneResponse == ResponseStatus.PENDING)
             revert InvalidState("milestone already requestded");
         m.milestoneResponse = ResponseStatus.PENDING;
+        m.payoutAmount = 0;
+        m.payoutResponse = ResponseStatus.NOT_REQUESTED;
 
         emit ApprovalMilestoneRequested(projectId, milestoneId, m.status);
     }
