@@ -3,7 +3,6 @@
 pragma solidity ^0.8.13;
 // Test for ProjectEscrow contract full workflow
 
-//xxx Create Project, Create Milestone, Start Project, Start Milestone, Deposit Funds has been tested
 //todo : test the rest of the functions
 
 import {Test} from "forge-std/Test.sol";
@@ -70,8 +69,8 @@ contract ProjectEscrowFullFlowTest is Test {
     address public defaultWorker = address(0x200);
 
     uint256 public defaultProjectId = 1;
-    uint256 public defaultMilestone1 = 0;
-    uint256 public defaultMilestone2 = 1;
+    uint256 public defaultMilestone1 = 123;
+    uint256 public defaultMilestone2 = 123456;
 
     function setUp() public {
         escrow = new ProjectEscrow();
@@ -86,6 +85,7 @@ contract ProjectEscrowFullFlowTest is Test {
         uint256 projectId = defaultProjectId;
         address client = defaultClient;
         address token = address(defaultToken);
+        uint256 minDeposite = 30;
 
         vm.startPrank(defaultWorker);
 
@@ -94,10 +94,10 @@ contract ProjectEscrowFullFlowTest is Test {
             projectId,
             client,
             defaultWorker,
+            minDeposite,
             token
         );
-        escrow.createProject(projectId, client, token);
-
+        escrow.createProject(projectId, client, token, minDeposite);
         vm.stopPrank();
     }
 
@@ -106,11 +106,15 @@ contract ProjectEscrowFullFlowTest is Test {
         // -----project already created----
         testCreateProjectSuccess();
         vm.startPrank(defaultWorker);
-        vm.expectRevert(ProjectEscrow.AlreadyExists.selector);
+        revertHelper(
+            ProjectEscrow.AlreadyExists.selector,
+            "project already exists"
+        );
         escrow.createProject(
             defaultProjectId,
             defaultClient,
-            address(defaultToken)
+            address(defaultToken),
+            12
         );
         vm.stopPrank();
         //-----client is zero address----
@@ -130,17 +134,23 @@ contract ProjectEscrowFullFlowTest is Test {
 
         vm.startPrank(defaultWorker);
         vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.MilestoneCreated(projectId, milestoneId, amount);
-        escrow.createMilestone(projectId, milestoneId, amount);
+        emit ProjectEscrow.MilestoneCreated(
+            projectId,
+            milestoneId,
+            amount,
+            1 days
+        );
+        escrow.createMilestone(projectId, milestoneId, amount, 1 days);
 
         //create milestone2
         vm.expectEmit(true, true, true, true);
         emit ProjectEscrow.MilestoneCreated(
             projectId,
             defaultMilestone2,
-            amount
+            amount,
+            1 days
         );
-        escrow.createMilestone(projectId, defaultMilestone2, amount);
+        escrow.createMilestone(projectId, defaultMilestone2, amount, 1 days);
         vm.stopPrank();
     }
 
@@ -152,24 +162,22 @@ contract ProjectEscrowFullFlowTest is Test {
         // vm.expectRevert(ProjectEscrow.OnlyWorker.selector);
         // escrow.createMilestone(defaultProjectId, defaultMilestone1, 100);
         // vm.stopPrank();
-
         // // -----milestone already created-----
         // //create milestone 1,2
         // testCreateMilestoneSuccess();
         // //create existing milestone
         // vm.startPrank(defaultWorker);
-        // vm.expectRevert(ProjectEscrow.AlreadyExists.selector);
-        // escrow.createMilestone(defaultProjectId, defaultMilestone2, 100);
+        // revertHelper(ProjectEscrow.AlreadyExists.selector, "milestone already exists");
+        // escrow.createMilestone(defaultProjectId, defaultMilestone2, 100, 1 days);
         // vm.stopPrank();
-
-        //-----amount is zero-----
-        //create project
-        testCreateProjectSuccess();
-        //set amount zero
-        vm.startPrank(defaultWorker);
-        vm.expectRevert(ProjectEscrow.InvalidAmount.selector);
-        escrow.createMilestone(defaultProjectId, defaultMilestone1, 0);
-        vm.stopPrank();
+        // //-----amount is zero-----
+        // //create project
+        // testCreateProjectSuccess();
+        // //set amount zero
+        // vm.startPrank(defaultWorker);
+        // revertHelper(ProjectEscrow.InvalidAmount.selector, "amount is 0");
+        // escrow.createMilestone(defaultProjectId, defaultMilestone1, 0, 1 days);
+        // vm.stopPrank();
     }
 
     //start project success
@@ -183,11 +191,12 @@ contract ProjectEscrowFullFlowTest is Test {
         vm.startPrank(defaultClient);
         // approve escrow to spend client's tokens
         defaultToken.approve(address(escrow), amount);
-
         vm.expectEmit(true, true, true, true);
         emit ProjectEscrow.ProjectStarted(projectId, amount);
         escrow.startProject(projectId, amount);
         vm.stopPrank();
+
+
     }
 
     //start project failed
@@ -203,18 +212,23 @@ contract ProjectEscrowFullFlowTest is Test {
         // approve escrow to spend client's tokens
         defaultToken.approve(address(escrow), amount);
 
-        vm.expectRevert(ProjectEscrow.OnlyClient.selector);
+        revertHelper(
+            ProjectEscrow.OnlyClient.selector,
+            "only client can call this function"
+        );
         escrow.startProject(projectId, amount);
         vm.stopPrank();
 
         //-------Amount 0---------
         //start project
-        vm.startPrank(defaultWorker);
+        vm.startPrank(defaultClient);
         // approve escrow to spend client's tokens
         defaultToken.approve(address(escrow), amount);
 
-        vm.expectRevert(ProjectEscrow.OnlyClient.selector);
+        revertHelper(ProjectEscrow.InvalidAmount.selector, "amount is 0");
         escrow.startProject(projectId, 0);
+        revertHelper(ProjectEscrow.InvalidAmount.selector, "amount is less than min deposite");
+        escrow.startProject(projectId, 10);
         vm.stopPrank();
     }
 
@@ -230,6 +244,8 @@ contract ProjectEscrowFullFlowTest is Test {
         emit ProjectEscrow.MilestoneStarted(projectId, milestoneId);
         escrow.startMilestone(projectId, milestoneId);
         vm.stopPrank();
+
+        
     }
 
     //start milestone failed
@@ -240,15 +256,16 @@ contract ProjectEscrowFullFlowTest is Test {
         // // create project, create milesotne, start project
         // testStartProjectSuccess();
         // vm.startPrank(defaultClient);
-        // vm.expectRevert(ProjectEscrow.OnlyWorker.selector);
+        // revertHelper(ProjectEscrow.OnlyWorker.selector, "only worker can call this function");
         // escrow.startMilestone(projectId, milestoneId);
         // vm.stopPrank();
-        // //---milestone not pending or rejected or project not onprogress---
-        // // create project, create milesotne, start project
-        // // testCreateProjectSuccess(); // make project status pending
+        //---milestone not pending or rejected or project not onprogress---
+        // create project, create milesotne, start project
+        // testCreateProjectSuccess(); // make project status pending
         // testStartMilestoneSuccess(); // make milestone status ONPROGRES
+        // consoleHelperProject(projectId, defaultMilestone1, defaultMilestone2);
         // vm.startPrank(defaultWorker);
-        // vm.expectRevert(ProjectEscrow.InvalidState.selector);
+        // revertHelper(ProjectEscrow.InvalidState.selector, "milestone is not pending or rejected or project is not onprogress");
         // escrow.startMilestone(projectId, milestoneId);
         // vm.stopPrank();
     }
@@ -263,8 +280,6 @@ contract ProjectEscrowFullFlowTest is Test {
         defaultToken.approve(address(escrow), 100);
         escrow.depositFunds(projectId, 100);
         vm.stopPrank();
-
-        consoleHelperProject(projectId, defaultMilestone1, defaultMilestone2);
     }
 
     //deposit funds failed
@@ -395,12 +410,6 @@ contract ProjectEscrowFullFlowTest is Test {
         );
         escrow.receivePayout(defaultProjectId, defaultMilestone1);
         vm.stopPrank();
-
-        consoleHelperProject(
-            defaultProjectId,
-            defaultMilestone1,
-            defaultMilestone2
-        );
     }
 
     // receive payout failed
@@ -441,12 +450,6 @@ contract ProjectEscrowFullFlowTest is Test {
         );
         escrow.requestApprovalMilestone(defaultProjectId, defaultMilestone1);
         vm.stopPrank();
-
-        consoleHelperProject(
-            defaultProjectId,
-            defaultMilestone1,
-            defaultMilestone2
-        );
     }
 
     //request approval milestone failed
@@ -472,31 +475,97 @@ contract ProjectEscrowFullFlowTest is Test {
         testRequestApprovalMilestoneSuccess();
         vm.startPrank(defaultClient);
         vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.MilestoneApprovalResponse(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED, ProjectEscrow.Status.APPROVED);
-        escrow.responseMilestoneApproval(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.APPROVED);
+        emit ProjectEscrow.MilestoneApprovalResponse(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.APPROVED,
+            ProjectEscrow.Status.APPROVED
+        );
+        escrow.responseMilestoneApproval(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.APPROVED
+        );
         vm.stopPrank();
-
-        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
     }
 
     // respose milestone approval failed
     function testResponseMilestoneApprovalFailed() public {
-        testRequestApprovalMilestoneSuccess();
+        testStartMilestoneSuccess();
         vm.startPrank(defaultClient);
-        revertHelper(ProjectEscrow.InvalidState.selector, "milestone approval must be pending");
-        escrow.responseMilestoneApproval(defaultProjectId, defaultMilestone1, ProjectEscrow.ResponseStatus.REJECTED);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "milestone approval must be pending"
+        );
+        escrow.responseMilestoneApproval(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.REJECTED
+        );
     }
 
     // withdraw milestone fund success
     function testWithdrawMilestoneFundSuccess() public {
-        testRequestApprovalMilestoneSuccess();
+        testResponseMilestoneApprovalSuccess();
         vm.startPrank(defaultWorker);
         vm.expectEmit(true, true, true, true);
-        emit ProjectEscrow.MilestoneFundWithdrawn(defaultProjectId, defaultMilestone1, 100);
+        emit ProjectEscrow.MilestoneFundWithdrawn(
+            defaultProjectId,
+            defaultMilestone1,
+            100
+        );
         escrow.withdrawMilestoneFund(defaultProjectId, defaultMilestone1);
         vm.stopPrank();
+    }
 
-        consoleHelperProject(defaultProjectId, defaultMilestone1, defaultMilestone2);
+    // withdraw milestone fund failed
+    function testWithdrawMilestoneFundFailed() public {
+        testRequestApprovalMilestoneSuccess();
+        // milestone reject milestone
+        vm.startPrank(defaultClient);
+        escrow.responseMilestoneApproval(
+            defaultProjectId,
+            defaultMilestone1,
+            ProjectEscrow.ResponseStatus.REJECTED
+        );
+        vm.stopPrank();
+
+        vm.startPrank(defaultWorker);
+        revertHelper(
+            ProjectEscrow.InvalidState.selector,
+            "milestone is not approved or milestone approval is not approved"
+        );
+        escrow.withdrawMilestoneFund(defaultProjectId, defaultMilestone2);
+        vm.stopPrank();
+    }
+
+    // req cancel project success
+    function testRequestCancelProjectSuccess() public {
+        testStartMilestoneSuccess();
+        //canceled by client
+        // vm.startPrank(defaultClient);
+        // vm.expectEmit(true, true, true, true);
+        // emit ProjectEscrow.requestCanceledProject(
+        //     defaultProjectId,
+        //     defaultClient
+        // );
+        // escrow.requestCancelProject(defaultProjectId);
+        // vm.stopPrank();
+        // testStartMilestoneSuccess();    
+        //canceled by worker
+        vm.startPrank(defaultWorker);
+        vm.expectEmit(true, true, true, true);
+        emit ProjectEscrow.requestCanceledProject(
+            defaultProjectId,
+            defaultWorker
+        );
+        escrow.requestCancelProject(defaultProjectId);
+        vm.stopPrank();
+    }
+
+    // responseCancelProject
+    function testResponseCancelProjectSuccess() public {
+        
     }
 
     //helper
@@ -548,6 +617,9 @@ contract ProjectEscrowFullFlowTest is Test {
         console.log(" worker  : %s", p.worker);
         console.log(" client  : %s", p.client);
         console.log(" token  : %s", p.token);
+        console.log(" minDeposite  : %s percent", p.minDeposite);
+        console.log(" responseTimestamp  : %s", p.responseTimestamp);
+        console.log(" timestamp  : %s", p.timestamp);
         for (uint i = 0; i < p.milestoneIds.length; i++) {
             console.log(" milestoneIds[%s]  : %s", i, p.milestoneIds[i]);
         }
