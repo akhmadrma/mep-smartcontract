@@ -1,17 +1,33 @@
-## Foundry
+# ProjectEscrow Smart Contract
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+ProjectEscrow is a robust and secure smart contract system designed to facilitate milestone-based payments between clients and workers. Built on Solidity and leveraging OpenZeppelin libraries, it ensures trustless, transparent, and automated project management for freelance and service-based engagements.
 
-Foundry consists of:
+## Features
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+- **Milestone-Based Escrow:** Funds are deposited and released per milestone, ensuring fair compensation and accountability.
+- **Role Management:** Distinct roles for client and worker, with access control for sensitive actions.
+- **Project Lifecycle:** Supports project creation, milestone management, approval/rejection flows, deadline extensions, and project cancellation.
+- **Refunds:** Automated refund mechanism for abandoned or canceled projects.
+- **ERC20 Support:** Handles payments in any ERC20 token.
+- **Security:** Utilizes OpenZeppelin's `ReentrancyGuard` and `SafeERC20` for secure fund transfers.
 
-## Documentation
+## Contract Structures
 
-https://book.getfoundry.sh/
+- **Project:** Contains client, worker, token, status, milestones, and timestamps.
+- **Milestone:** Tracks payout, deadlines, approval status, and responses.
+- **ProjectBalance:** Manages deposited, withdrawn, and total funds.
+- **CanceledProject & ExtendDeadline:** Handle cancellation and deadline extension requests.
+
+## Key Functions
+
+- `createProject`: Initialize a new project with milestones.
+- `depositFunds`: Client deposits funds for the project.
+- `requestPayout`: Worker requests payout for a completed milestone.
+- `approvePayout`: Client approves payout, releasing funds.
+- `requestCancelProject` / `responseCancelProject`: Initiate and respond to project cancellation.
+- `requestExtendDeadline` / `responseExtendDeadline`: Manage milestone deadline extensions.
+- `issueRefund`: Client can claim a refund if the project is abandoned.
+- `completeProject`: Worker marks the project as completed after all milestones are approved and paid.
 
 ## Usage
 

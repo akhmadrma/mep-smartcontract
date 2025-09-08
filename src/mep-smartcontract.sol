@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 //xxxxxxxxx MEP-SMARTCONTRACT BETA 0.1 xxxxxxxxx
-//xxx expecting huge gasfee, need more optimilization
-//todo : add get project balance, milestone balance, cancel project log
-
+z
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -98,7 +96,8 @@ contract ProjectEscrow is ReentrancyGuard {
     mapping(uint256 => ProjectBalance) public projectBalances;
 
     // Mapping for MilestoneBalance
-    mapping(uint256 => mapping(uint256 => MilestoneBalance)) public milestoneBalances;
+    mapping(uint256 => mapping(uint256 => MilestoneBalance))
+        public milestoneBalances;
 
     // Mapping for extend deadline
     mapping(uint256 => mapping(uint256 => ExtendDeadline))
@@ -121,8 +120,6 @@ contract ProjectEscrow is ReentrancyGuard {
     event FundsWithdrawn(uint256 projectId, uint256 amount);
     event RefundIssued(uint256 projectId, uint256 amount);
     event ProjectApproved(uint256 projectId);
-    event ProjectStarted(uint256 projectId, uint256 amount);
-    event MilestoneStarted(uint256 projectId, uint256 milestoneId);
     event FundsDeposited(uint256 projectId, uint256 amount);
     event PayoutRequested(
         uint256 projectId,
@@ -135,11 +132,7 @@ contract ProjectEscrow is ReentrancyGuard {
         ResponseStatus response,
         uint256 amount
     );
-    event PayoutWithdrawn(
-        uint256 projectId,
-        uint256 milestoneId,
-        uint256 amount
-    );
+
     event ApprovalMilestoneRequested(
         uint256 projectId,
         uint256 milestoneId,
@@ -163,8 +156,8 @@ contract ProjectEscrow is ReentrancyGuard {
     function createProject(
         uint256 _projectId,
         address _client,
-        uint256 _minDeposite
-        address _token,
+        uint256 _minDeposite,
+        address _token
     ) public {
         if (projects[_projectId].timestamp != 0)
             revert AlreadyExists("project already exists");
@@ -193,7 +186,7 @@ contract ProjectEscrow is ReentrancyGuard {
             _projectId,
             projects[_projectId].client,
             projects[_projectId].worker,
-            ProjectBalance[_projectId].minDeposite,
+            projectBalances[_projectId].minDeposite,
             projects[_projectId].token
         );
     }
@@ -214,7 +207,9 @@ contract ProjectEscrow is ReentrancyGuard {
         Milestone storage m = projectMilestones[_projectId][_milestoneId];
         Project storage p = projects[_projectId];
         ProjectBalance storage pb = projectBalances[_projectId];
-        MilestoneBalance storage mb = milestoneBalances[_projectId][_milestoneId];
+        MilestoneBalance storage mb = milestoneBalances[_projectId][
+            _milestoneId
+        ];
         if (_amount == 0) revert InvalidAmount("amount is 0");
         if (m.timestamp != 0) revert AlreadyExists("milestone already exists");
         if (p.status != Status.PENDING)
@@ -237,11 +232,11 @@ contract ProjectEscrow is ReentrancyGuard {
         pb.totalAmount += _amount;
         mb.amount = _amount;
         p.milestoneIds.push(_milestoneId);
-        emit MilestoneCreated(_projectId, _milestoneId, m.amount, m.deadline);
+        emit MilestoneCreated(_projectId, _milestoneId, mb.amount, m.deadline);
     }
 
     // start project by depositing funds
-
+    event ProjectStarted(uint256 projectId, uint256 amount);
     function startProject(
         uint256 projectId,
         uint256 amount
@@ -249,11 +244,13 @@ contract ProjectEscrow is ReentrancyGuard {
         Project storage p = projects[projectId];
         ProjectBalance storage pb = projectBalances[projectId];
         IERC20 token = IERC20(p.token);
-    if (token.balanceOf(msg.sender) < amount)
-        revert InvalidAmount("insufficient token balance");
-    if (token.allowance(msg.sender, address(this)) < amount)
-        revert InvalidAmount("insufficient token allowance");
+        if (token.balanceOf(msg.sender) < amount)
+            revert InvalidAmount("insufficient token balance");
+        if (token.allowance(msg.sender, address(this)) < amount)
+            revert InvalidAmount("insufficient token allowance");
         if (amount == 0) revert InvalidAmount("amount is 0");
+        if (pb.totalAmount == 0)
+            revert InvalidState("no milestones created yet");
         if (amount < (pb.minDeposite * pb.totalAmount) / 100)
             revert InvalidAmount("amount is less than min deposite");
         if (amount > pb.totalAmount)
@@ -261,12 +258,13 @@ contract ProjectEscrow is ReentrancyGuard {
         if (p.status != Status.PENDING)
             revert InvalidState("project is not pending");
 
-        
-            try token.transferFrom(msg.sender, address(this), amount) returns (bool success) {
-        if (!success) revert TransferFailed("token transfer failed");
-    } catch {
-        revert TransferFailed("token transfer reverted");
-    }
+        try token.transferFrom(msg.sender, address(this), amount) returns (
+            bool success
+        ) {
+            if (!success) revert TransferFailed("token transfer failed");
+        } catch {
+            revert TransferFailed("token transfer reverted");
+        }
 
         p.status = Status.ONPROGRESS;
         p.timestamp = block.timestamp;
@@ -276,6 +274,7 @@ contract ProjectEscrow is ReentrancyGuard {
     }
 
     //start milestone
+    event MilestoneStarted(uint256 projectId, uint256 milestoneId);
     function startMilestone(
         uint256 projectId,
         uint256 milestoneId
@@ -302,20 +301,22 @@ contract ProjectEscrow is ReentrancyGuard {
         Project storage p = projects[projectId];
         ProjectBalance storage pb = projectBalances[projectId];
         IERC20 token = IERC20(p.token);
-    if (token.balanceOf(msg.sender) < amount)
-        revert InvalidAmount("insufficient token balance");
-    if (token.allowance(msg.sender, address(this)) < amount)
-        revert InvalidAmount("insufficient token allowance");
+        if (token.balanceOf(msg.sender) < amount)
+            revert InvalidAmount("insufficient token balance");
+        if (token.allowance(msg.sender, address(this)) < amount)
+            revert InvalidAmount("insufficient token allowance");
         if (amount == 0) revert InvalidAmount("amount is 0");
         uint256 remainingAmount = pb.totalAmount - pb.fundsDeposited;
         if (amount > remainingAmount)
             revert InvalidAmount("amount is more than remaining amount");
 
-            try token.transferFrom(msg.sender, address(this), amount) returns (bool success) {
-        if (!success) revert TransferFailed("token transfer failed");
-    } catch {
-        revert TransferFailed("token transfer reverted");
-    }
+        try token.transferFrom(msg.sender, address(this), amount) returns (
+            bool success
+        ) {
+            if (!success) revert TransferFailed("token transfer failed");
+        } catch {
+            revert TransferFailed("token transfer reverted");
+        }
 
         pb.fundsDeposited += amount;
         emit FundsDeposited(projectId, amount);
@@ -333,8 +334,11 @@ contract ProjectEscrow is ReentrancyGuard {
             revert InvalidState("milestone is not onprogress");
         if (m.payoutResponse != ResponseStatus.NOT_REQUESTED)
             revert InvalidState("payout already requested");
-        if (amount == 0 || amount > mb.amount)
-            revert InvalidAmount("amount is 0 or more than milestone amount");
+        uint256 remainingAmount = mb.amount - mb.withdrawnAmount;
+        if (amount == 0 || amount > remainingAmount)
+            revert InvalidAmount(
+                "amount is 0 or more than remaining milestone amount"
+            );
         m.payoutResponse = ResponseStatus.PENDING;
         m.payoutAmount = amount;
 
@@ -355,24 +359,31 @@ contract ProjectEscrow is ReentrancyGuard {
     }
 
     //payout function for milestones needs
+    event PayoutWithdrawn(
+        uint256 projectId,
+        uint256 milestoneId,
+        uint256 amount
+    );
     function receivePayout(
         uint256 projectId,
         uint256 milestoneId
     ) external onlyWorker(projectId) nonReentrant {
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (m.amount == 0) revert InvalidState("milestone amount is 0");
+        MilestoneBalance storage mb = milestoneBalances[projectId][milestoneId];
+        if (mb.amount == 0) revert InvalidState("milestone balance is 0");
         if (m.payoutResponse != ResponseStatus.APPROVED)
             revert InvalidState("payout is not approved");
 
         uint256 amountToWithdraw = m.payoutAmount;
-        if (projectBalances[projectId] < amountToWithdraw)
+        uint256 remainingAmount = mb.amount - mb.withdrawnAmount;
+        if (remainingAmount < amountToWithdraw)
             revert InvalidState(
-                "project balance is less than amount to withdraw"
+                "milestone balance is less than amount to withdraw"
             );
 
         // Effects
-        projectBalances[projectId] -= amountToWithdraw;
-        m.amount -= amountToWithdraw;
+        mb.withdrawnAmount += amountToWithdraw;
+        projectBalances[projectId].withdrawnAmount += amountToWithdraw;
         m.payoutResponse = ResponseStatus.NOT_REQUESTED;
         m.payoutAmount = 0;
 
@@ -429,6 +440,10 @@ contract ProjectEscrow is ReentrancyGuard {
         uint256 milestoneId
     ) external onlyWorker(projectId) nonReentrant {
         Milestone storage m = projectMilestones[projectId][milestoneId];
+        MilestoneBalance storage mb = milestoneBalances[projectId][milestoneId];
+        ProjectBalance storage pb = projectBalances[projectId];
+        uint256 amountToWithdraw = mb.amount - mb.withdrawnAmount;
+        uint256 remainingAmount = pb.fundsDeposited - pb.withdrawnAmount;
         if (
             m.status != Status.APPROVED &&
             m.milestoneResponse != ResponseStatus.APPROVED
@@ -437,14 +452,14 @@ contract ProjectEscrow is ReentrancyGuard {
                 "milestone is not approved or milestone approval is not approved"
             );
 
-        uint256 amountToWithdraw = m.amount;
-        if (projectBalances[projectId] < amountToWithdraw)
+        if (remainingAmount < amountToWithdraw)
             revert InvalidState(
-                "project balance is less than amount to withdraw"
+                "project funds deposited is less than amount to withdraw"
             );
+        if (amountToWithdraw == 0) revert InvalidAmount("no funds to withdraw");
 
-        projectBalances[projectId] -= amountToWithdraw;
-
+        pb.withdrawnAmount += amountToWithdraw;
+        mb.withdrawnAmount += amountToWithdraw;
         IERC20 token = IERC20(projects[projectId].token);
         token.safeTransfer(projects[projectId].worker, amountToWithdraw);
         m.status = Status.COMPLETED;
@@ -467,9 +482,11 @@ contract ProjectEscrow is ReentrancyGuard {
     function requestCancelProject(uint256 projectId) external {
         if (projects[projectId].status != Status.ONPROGRESS)
             revert InvalidState("project is not onprogress");
+        if (msg.sender != projects[projectId].client && msg.sender != projects[projectId].worker)
+        revert InvalidState("only client or worker can request cancel");
         projects[projectId].status = Status.PENDING;
         canceledProjects[projectId] = CanceledProject({
-            requestBy: msg.sender, // Yang memanggil fungsi ini
+            requestBy: msg.sender, 
             responseBy: msg.sender == projects[projectId].client
                 ? projects[projectId].worker
                 : projects[projectId].client,
@@ -502,14 +519,14 @@ contract ProjectEscrow is ReentrancyGuard {
             revert InvalidState("you cant response your own request");
 
         if (response == ResponseStatus.APPROVED) {
+            ProjectBalance storage pb = projectBalances[projectId];
             projects[projectId].status = Status.CANCELED;
             canceledProjects[projectId].response = response;
 
-            uint256 refundable = projectBalances[projectId];
+            uint256 refundable = pb.fundsDeposited - pb.withdrawnAmount;
             if (refundable == 0) revert InvalidAmount("refundable is 0");
             IERC20 token = IERC20(projects[projectId].token);
             token.safeTransfer(projects[projectId].client, refundable);
-            projectBalances[projectId] = 0;
         } else {
             projects[projectId].status = Status.ONPROGRESS;
         }
@@ -561,15 +578,11 @@ contract ProjectEscrow is ReentrancyGuard {
     ) external onlyClient(projectId) nonReentrant {
         ExtendDeadline storage ed = extendDeadlines[projectId][milestoneId];
         Milestone storage m = projectMilestones[projectId][milestoneId];
-        if (
-            ed.response !=
-            ResponseStatus.PENDING
-        ) revert InvalidState("extend deadline is not pending");
+        if (ed.response != ResponseStatus.PENDING)
+            revert InvalidState("extend deadline is not pending");
         ed.response = response;
-        m.deadline = response ==
-            ResponseStatus.APPROVED
-            ? m.deadline +
-                ed.extendTime
+        m.deadline = response == ResponseStatus.APPROVED
+            ? m.deadline + ed.extendTime
             : m.deadline;
         ed.response = ResponseStatus.NOT_REQUESTED;
         ed.extendTime = 0;
@@ -582,6 +595,7 @@ contract ProjectEscrow is ReentrancyGuard {
         uint256 milestoneId
     ) external onlyClient(projectId) {
         Project storage p = projects[projectId];
+        ProjectBalance storage pb = projectBalances[projectId];
         Milestone storage m = projectMilestones[projectId][milestoneId];
         uint256 timeDifference = m.timestamp + m.deadline - block.timestamp;
 
@@ -591,23 +605,22 @@ contract ProjectEscrow is ReentrancyGuard {
             revert InvalidState("milestone is not onprogress");
         if (timeDifference > 1 days)
             revert InvalidState("milestone deadline is not reached");
-        uint256 refundable = projectBalances[projectId];
+        uint256 refundable = pb.fundsDeposited - pb.withdrawnAmount;
         if (refundable == 0) revert InvalidAmount("refundable is 0");
 
         IERC20 token = IERC20(projects[projectId].token);
         token.safeTransfer(p.client, refundable);
-        projectBalances[projectId] = 0;
         p.status = Status.CANCELED;
 
         emit RefundIssued(projectId, refundable);
     }
 
-    // Fungsi untuk menyelesaikan proyek dan mengonfirmasi bahwa semua dana telah diproses
+    // func complete project
     function completeProject(uint256 projectId) external onlyWorker(projectId) {
-        if (projectBalances[projectId] > 0)
-            revert InvalidState("project balance is more than 0");
-
         Project storage p = projects[projectId];
+        ProjectBalance storage pb = projectBalances[projectId];
+
+        // Cek apakah semua milestone sudah completed
         for (uint256 i = 0; i < p.milestoneIds.length; i++) {
             if (
                 projectMilestones[projectId][p.milestoneIds[i]].status !=
@@ -618,6 +631,11 @@ contract ProjectEscrow is ReentrancyGuard {
                     .milestoneResponse != ResponseStatus.APPROVED
             ) revert InvalidState("milestone approval is not approved");
         }
+
+        // Cek apakah semua funds sudah withdrawn
+        if (pb.withdrawnAmount != pb.fundsDeposited)
+            revert InvalidState("funds not fully withdrawn");
+
         projects[projectId].status = Status.COMPLETED;
     }
 
@@ -634,20 +652,29 @@ contract ProjectEscrow is ReentrancyGuard {
         return projectMilestones[projectId][milestoneId];
     }
 
-    // Fungsi untuk mengambil status proyek
-    function getProjectStatus(
+    function getProjectBalance(
         uint256 projectId
-    ) public view returns (Status, uint256, uint256) {
-        Project storage project = projects[projectId];
-        return (project.status, project.fundsDeposited, project.totalAmount);
+    ) public view returns (ProjectBalance memory) {
+        return projectBalances[projectId];
     }
 
-    // Fungsi untuk mengambil status milestone
-    function getMilestoneStatus(
+    function getMilestoneBalance(
         uint256 projectId,
         uint256 milestoneId
-    ) public view returns (Status, uint256, uint256) {
-        Milestone storage milestone = projectMilestones[projectId][milestoneId];
-        return (milestone.status, milestone.amount, milestone.timestamp);
+    ) public view returns (MilestoneBalance memory) {
+        return milestoneBalances[projectId][milestoneId];
+    }
+
+    function getCanceledProject(
+        uint256 projectId
+    ) public view returns (CanceledProject memory) {
+        return canceledProjects[projectId];
+    }
+
+    function getExtendDeadline(
+        uint256 projectId,
+        uint256 milestoneId
+    ) public view returns (ExtendDeadline memory) {
+        return extendDeadlines[projectId][milestoneId];
     }
 }
