@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 //xxxxxxxxx MEP-SMARTCONTRACT BETA 0.1 xxxxxxxxx
-z
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -539,7 +538,7 @@ contract ProjectEscrow is ReentrancyGuard {
     }
 
     // func req extend deadline
-    event requestExtendDeadline(
+    event extendDeadlineRequested(
         uint256 projectId,
         uint256 milestoneId,
         uint256 newDeadline
@@ -562,11 +561,11 @@ contract ProjectEscrow is ReentrancyGuard {
             response: ResponseStatus.PENDING,
             timestamp: block.timestamp
         });
-        emit requestExtendDeadline(projectId, milestoneId, _extendTime);
+        emit extendDeadlineRequested(projectId, milestoneId, _extendTime);
     }
 
     // func res extend deadline
-    event responseExtendDeadline(
+    event extendDeadlineResponse(
         uint256 projectId,
         uint256 milestoneId,
         ResponseStatus response
@@ -586,7 +585,7 @@ contract ProjectEscrow is ReentrancyGuard {
             : m.deadline;
         ed.response = ResponseStatus.NOT_REQUESTED;
         ed.extendTime = 0;
-        emit responseExtendDeadline(projectId, milestoneId, response);
+        emit extendDeadlineResponse(projectId, milestoneId, response);
     }
 
     // func issueRefund for client if project abandoned
